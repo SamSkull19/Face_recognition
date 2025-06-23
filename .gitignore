@@ -1,0 +1,8 @@
+# Ignore virtual environments
+venv/
+__pycache__/
+*.py[cod]
+
+# Optional: ignore datasets/models
+Dataset/
+embeddings.npy
