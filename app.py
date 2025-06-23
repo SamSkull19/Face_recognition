@@ -2,7 +2,8 @@ import streamlit as st
 import numpy as np
 import os
 import cv2
-from face_recognition import train_dataset, recognize_Face_from_frame, create_dataset
+import time
+from face_recognition import train_dataset, recognize_Face_from_frame
 
 # Constants
 DATASET_DIR = "Dataset"
@@ -15,6 +16,10 @@ st.set_page_config(
     page_icon="🧠"
 )
 
+# Suppress OpenCV and TensorFlow warnings
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
+
 # Sidebar navigation
 st.sidebar.title("Navigation")
 menu_options = {
@@ -24,7 +29,63 @@ menu_options = {
 }
 choice = st.sidebar.radio("Select Task", list(menu_options.keys()))
 
-# 1️⃣ CREATE DATASET (Auto-capture)
+# Helper function for camera capture
+def capture_images(name, sample_count):
+    """Handles the image capture process"""
+    if 'capture_count' not in st.session_state:
+        st.session_state.capture_count = 0
+        st.session_state.captured_frames = []
+    
+    placeholder = st.empty()
+    img_placeholder = st.empty()
+    status = st.empty()
+    
+    while st.session_state.capture_count < sample_count:
+        with placeholder.container():
+            st.info(f"Auto-capturing {st.session_state.capture_count + 1}/{sample_count} - Look at the camera")
+        
+        img_file_buffer = st.camera_input("", key=f"camera_{st.session_state.capture_count}")
+        
+        if img_file_buffer is not None:
+            # Process the image
+            bytes_data = img_file_buffer.getvalue()
+            frame = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
+            
+            # Save the image
+            person_dir = os.path.join(DATASET_DIR, name)
+            os.makedirs(person_dir, exist_ok=True)
+            st.session_state.capture_count += 1
+            cv2.imwrite(os.path.join(person_dir, f"{name}_{st.session_state.capture_count}.jpg"), frame)
+            st.session_state.captured_frames.append(frame)
+            
+            # Show preview
+            with img_placeholder.container():
+                st.image(frame, channels="BGR", caption=f"Captured #{st.session_state.capture_count}")
+            
+            # Small delay before next capture
+            time.sleep(1)
+            
+            # Force rerun to refresh camera input
+            st.rerun()
+    
+    if st.session_state.capture_count >= sample_count:
+        with status.container():
+            st.success(f"✅ Successfully captured {sample_count} images for '{name}'!")
+            st.balloons()
+            
+            # Show sample captures
+            st.subheader("Sample Captures")
+            cols = st.columns(3)
+            for i, frame in enumerate(st.session_state.captured_frames[-6:]):
+                cols[i%3].image(frame, channels="BGR", use_column_width=True)
+        
+        # Reset session state
+        del st.session_state.capture_count
+        del st.session_state.captured_frames
+        return True
+    return False
+
+# 1️⃣ CREATE DATASET
 if choice == "📸 Create Dataset":
     st.title("Create Face Dataset")
     
@@ -32,30 +93,11 @@ if choice == "📸 Create Dataset":
     with col1:
         name = st.text_input("Person's Name", placeholder="Enter name")
     with col2:
-        samples = st.slider("Samples to Capture", 10, 100, 30, 5)
+        samples = st.slider("Number of Images to Capture", 5, 100, 20, 5)
     
-    if st.button("🚀 Start Auto-Capture"):
-        if not name.strip():
-            st.error("Please enter a valid name")
-        else:
-            with st.spinner(f"🔍 Looking for faces to capture {samples} samples..."):
-                try:
-                    frames, saved_count = create_dataset(name, samples)
-                    
-                    if saved_count > 0:
-                        st.success(f"✅ Successfully captured {saved_count} samples for {name}!")
-                        st.balloons()
-                        
-                        # Show sample captures
-                        st.subheader("Last 6 Captures")
-                        cols = st.columns(3)
-                        for i, frame in enumerate(frames[-6:]):
-                            cols[i%3].image(frame, channels="BGR", use_column_width=True)
-                    else:
-                        st.warning("No faces detected during capture session")
-                        
-                except Exception as e:
-                    st.error(f"Error during capture: {str(e)}")
+    if name.strip() and st.button("🚀 Start Auto-Capture"):
+        with st.spinner("Initializing camera..."):
+            capture_images(name, samples)
 
 # 2️⃣ TRAIN MODEL
 elif choice == "🧬 Train Model":
@@ -94,7 +136,7 @@ elif choice == "🔍 Recognize Face":
                 processed_frame = recognize_Face_from_frame(frame, embeddings)
                 st.image(processed_frame, channels="BGR", use_column_width=True)
 
-# Add some app info
+# App information
 st.sidebar.markdown("---")
 st.sidebar.info(
     "Face Recognition System\n\n"
