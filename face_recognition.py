@@ -2,40 +2,50 @@ import os
 import cv2
 import numpy as np
 from deepface import DeepFace
-from streamlit_webrtc import VideoTransformerBase
 
 # Path to dataset directory
 dir = "Dataset"
 os.makedirs(dir, exist_ok=True)
 
-# ✅ Create Dataset Function (now uses file upload)
-def create_dataset(name, uploaded_files):
+
+# ✅ Create Dataset Function
+def create_dataset(name, sample_count=50):
     person = os.path.join(dir, name)
     os.makedirs(person, exist_ok=True)
-    frames = []
 
-    for i, uploaded_file in enumerate(uploaded_files):
-        try:
-            file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-            frame = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-            
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            faces = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml") \
-                .detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
+    cap = cv2.VideoCapture(0)
+    count = 0
+    frames = []  # to return for streamlit
 
-            for (x, y, w, h) in faces:
-                face_img = frame[y:y + h, x:x + w]
-                face_path = os.path.join(person, f"{name}_{i+1}.jpg")
-                cv2.imwrite(face_path, face_img)
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Cannot capture image")
+            break
 
-            frames.append(frame)
-        except Exception as e:
-            print(f"Error processing image {i+1}: {str(e)}")
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml") \
+            .detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
 
+        for (x, y, w, h) in faces:
+            count += 1
+            face_img = frame[y:y + h, x:x + w]
+            face_path = os.path.join(person, f"{name}_{count}.jpg")
+            cv2.imwrite(face_path, face_img)
+
+            # Draw box
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+
+        frames.append(frame.copy())
+
+        if count >= sample_count:
+            break
+
+    cap.release()
     return frames
 
-# ✅ Train Dataset Function (unchanged)
+
+# ✅ Train Dataset Function
 def train_dataset():
     embedding = {}
 
@@ -53,9 +63,18 @@ def train_dataset():
 
     return embedding
 
-# ✅ Modified Recognize Face Function for single frames
-def recognize_face(frame, embeddings):
-    try:
+
+# ✅ Recognize Face Function
+def recognize_Face(embeddings):
+    cap = cv2.VideoCapture(0)
+    frames = []
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Failed to capture image")
+            break
+
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml") \
             .detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
@@ -95,21 +114,13 @@ def recognize_face(frame, embeddings):
 
                 display_text = f"{label} | Age: {int(age)} | Gender: {gender} | Emotion: {emotion}"
                 cv2.putText(frame, display_text, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                           0.5, (255, 255, 255), 2)
+                            fontScale=0.5, color=(255, 255, 255), thickness=2)
 
             except Exception as e:
-                print("Face analysis error:", str(e))
+                print("Face could not be analyzed.")
 
-    except Exception as e:
-        print("Frame processing error:", str(e))
+        frames.append(frame.copy())
+        break  # Only take one frame for Streamlit real-time preview
 
-    return frame
-
-# WebRTC Video Transformer Class
-class FaceRecognitionTransformer(VideoTransformerBase):
-    def __init__(self, embeddings):
-        self.embeddings = embeddings
-    
-    def transform(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-        return recognize_face(img, self.embeddings)
+    cap.release()
+    return frames
