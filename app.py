@@ -23,38 +23,39 @@ if choice == "📸 Create Dataset":
         person_dir = os.path.join("Dataset", name)
         os.makedirs(person_dir, exist_ok=True)
 
-        if "start_capture" not in st.session_state:
-            st.session_state.start_capture = False
+        # Initialize session state
         if "capture_count" not in st.session_state:
             st.session_state.capture_count = len(os.listdir(person_dir))
+        if "start_capture" not in st.session_state:
+            st.session_state.start_capture = False
 
         if not st.session_state.start_capture:
-            if st.button("📸 Start Capturing"):
+            if st.button("📸 Start Capture"):
                 st.session_state.start_capture = True
-                st.experimental_rerun()
 
-        if st.session_state.start_capture:
-            st.info(f"📷 Capturing image {st.session_state.capture_count + 1} of {samples}")
+        if st.session_state.start_capture and st.session_state.capture_count < samples:
+            st.info(f"📷 Capture image {st.session_state.capture_count + 1} of {samples}")
+            img = st.camera_input("Take picture")
 
-            img_file_buffer = st.camera_input("Keep looking at the camera", key=f"cam_{st.session_state.capture_count}")
-
-            if img_file_buffer is not None:
-                bytes_data = img_file_buffer.getvalue()
+            if img is not None:
+                bytes_data = img.getvalue()
                 image = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
 
-                img_name = os.path.join(person_dir, f"{name}_{st.session_state.capture_count + 1}.jpg")
-                cv2.imwrite(img_name, image)
+                save_path = os.path.join(person_dir, f"{name}_{st.session_state.capture_count + 1}.jpg")
+                cv2.imwrite(save_path, image)
 
-                st.success(f"✅ Saved image {st.session_state.capture_count + 1}")
+                st.success(f"✅ Image {st.session_state.capture_count + 1} saved.")
                 st.session_state.capture_count += 1
 
-                if st.session_state.capture_count >= samples:
-                    st.success("🎉 Dataset capture complete!")
-                    st.balloons()
-                    st.session_state.start_capture = False
-                    st.session_state.capture_count = 0
-                else:
-                    st.experimental_rerun()
+        if st.session_state.capture_count >= samples:
+            st.success(f"🎉 Done! Collected {samples} images for '{name}'.")
+            st.balloons()
+
+            # Reset session state if needed
+            if st.button("🔄 Reset"):
+                st.session_state.capture_count = 0
+                st.session_state.start_capture = False
+
 
 
 # 2️⃣ TRAIN MODEL
