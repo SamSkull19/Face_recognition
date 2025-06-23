@@ -125,48 +125,62 @@ def recognize_Face(embeddings):
 # ✅ New Function: Recognize Face from Single Frame (for camera_input)
 def recognize_Face_from_frame(frame, embeddings):
     """Process a single frame for face recognition"""
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml") \
-        .detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
+    try:
+        # Convert frame to RGB (DeepFace expects RGB)
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # First try with enforce_detection=True
+        try:
+            analyse = DeepFace.analyze(frame_rgb, 
+                                     actions=["age", "gender", "emotion"],
+                                     enforce_detection=True)
+        except:
+            # If no face detected, return original frame
+            return frame
 
-    for (x, y, w, h) in faces:
-        face_img = frame[y:y + h, x:x + w]
+        if isinstance(analyse, list):
+            analyse = analyse[0]  # Take first face if multiple detected
+
+        # Get face location
+        x, y, w, h = analyse['region']['x'], analyse['region']['y'], \
+                     analyse['region']['w'], analyse['region']['h']
+        
+        # Draw rectangle
         cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
 
-        try:
-            analyse = DeepFace.analyze(face_img, actions=["age", "gender", "emotion"], enforce_detection=False)
-            if isinstance(analyse, list):
-                analyse = analyse[0]
+        # Get analysis results
+        age = analyse.get("age", "N/A")
+        gender = analyse.get("gender", "N/A")
+        if isinstance(gender, dict):
+            gender = max(gender, key=gender.get)
+        emotion = max(analyse.get("emotion", {}), 
+                     key=analyse.get("emotion", {}).get)
 
-            age = analyse["age"]
-            gender = analyse["gender"]
-            gender = gender if isinstance(gender, str) else max(gender, key=gender.get)
-            emotion = max(analyse["emotion"], key=analyse["emotion"].get)
+        # Get embedding for recognition
+        face_embedding = DeepFace.represent(
+            frame_rgb[y:y+h, x:x+w], 
+            model_name="Facenet", 
+            enforce_detection=False
+        )[0]["embedding"]
 
-            face_embedding = DeepFace.represent(face_img, model_name="Facenet", enforce_detection=False)[0]["embedding"]
+        # Find best match
+        match, max_similarity = None, -1
+        for person_name, person_embeddings in embeddings.items():
+            for embed in person_embeddings:
+                similarity = np.dot(face_embedding, embed) / (
+                    np.linalg.norm(face_embedding) * np.linalg.norm(embed)
+                )
+                if similarity > max_similarity:
+                    max_similarity = similarity
+                    match = person_name
 
-            match = None
-            max_similarity = -1
+        label = f"{match} ({max_similarity:.2f})" if max_similarity > 0.7 else "Unknown"
+        
+        display_text = f"{label} | Age: {int(age)} | Gender: {gender} | Emotion: {emotion}"
+        cv2.putText(frame, display_text, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
+                   fontScale=0.5, color=(255, 255, 255), thickness=2)
 
-            for person_name, person_embeddings in embeddings.items():
-                for embed in person_embeddings:
-                    similarity = np.dot(face_embedding, embed) / (
-                        np.linalg.norm(face_embedding) * np.linalg.norm(embed)
-                    )
-                    if similarity > max_similarity:
-                        max_similarity = similarity
-                        match = person_name
-
-            if max_similarity > 0.7:
-                label = f"{match} ({max_similarity:.2f})"
-            else:
-                label = "Unknown"
-
-            display_text = f"{label} | Age: {int(age)} | Gender: {gender} | Emotion: {emotion}"
-            cv2.putText(frame, display_text, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                        fontScale=0.5, color=(255, 255, 255), thickness=2)
-
-        except Exception as e:
-            print("Face could not be analyzed:", str(e))
+    except Exception as e:
+        print(f"Error in face analysis: {str(e)}")
 
     return frame
