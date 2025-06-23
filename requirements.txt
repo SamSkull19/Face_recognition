@@ -1,10 +1,8 @@
 # requirements.txt
-
 streamlit
 pandas
 numpy
-opencv-python
+opencv-python-headless  # <-- Change this line
 deepface
 tensorflow
-# Add setuptools for better compatibility with newer Python versions
 setuptools
