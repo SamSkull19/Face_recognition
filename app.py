@@ -12,51 +12,33 @@ st.title("🧠 Real-time Face Recognition with DeepFace")
 menu = ["📸 Create Dataset", "🧬 Train Model", "🔍 Recognize Face"]
 choice = st.sidebar.selectbox("Select Task", menu)
 
-# 1️⃣ CREATE DATASET (Auto Capture Images)
+# 1️⃣ CREATE DATASET
 if choice == "📸 Create Dataset":
     name = st.text_input("Enter the name of the person:")
-    samples = st.slider("Number of face samples", 5, 100, 10, 5)
+    samples = st.slider("Number of face samples", 5, 100, 50, 5)
 
     if name.strip() == "":
         st.warning("⚠️ Please enter a valid name.")
     else:
-        person_dir = os.path.join("Dataset", name)
-        os.makedirs(person_dir, exist_ok=True)
+        st.info("📷 Look at the camera and click pictures below")
+        
+        img_file_buffer = st.camera_input(f"Take pictures of {name}", key="camera_create")
 
-        # Initialize session state
-        if "capture_count" not in st.session_state:
-            st.session_state.capture_count = len(os.listdir(person_dir))
-        if "start_capture" not in st.session_state:
-            st.session_state.start_capture = False
+        if img_file_buffer is not None:
+            bytes_data = img_file_buffer.getvalue()
+            image = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
 
-        if not st.session_state.start_capture:
-            if st.button("📸 Start Capture"):
-                st.session_state.start_capture = True
+            # Save the image
+            person_dir = os.path.join("Dataset", name)
+            os.makedirs(person_dir, exist_ok=True)
+            count = len(os.listdir(person_dir)) + 1
+            cv2.imwrite(os.path.join(person_dir, f"{name}_{count}.jpg"), image)
 
-        if st.session_state.start_capture and st.session_state.capture_count < samples:
-            st.info(f"📷 Capture image {st.session_state.capture_count + 1} of {samples}")
-            img = st.camera_input("Take picture")
+            st.success(f"Saved image {count}/{samples}")
 
-            if img is not None:
-                bytes_data = img.getvalue()
-                image = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
-
-                save_path = os.path.join(person_dir, f"{name}_{st.session_state.capture_count + 1}.jpg")
-                cv2.imwrite(save_path, image)
-
-                st.success(f"✅ Image {st.session_state.capture_count + 1} saved.")
-                st.session_state.capture_count += 1
-
-        if st.session_state.capture_count >= samples:
-            st.success(f"🎉 Done! Collected {samples} images for '{name}'.")
-            st.balloons()
-
-            # Reset session state if needed
-            if st.button("🔄 Reset"):
-                st.session_state.capture_count = 0
-                st.session_state.start_capture = False
-
-
+            if count >= samples:
+                st.balloons()
+                st.success(f"✅ Dataset created with {samples} images for '{name}'")
 
 # 2️⃣ TRAIN MODEL
 elif choice == "🧬 Train Model":
